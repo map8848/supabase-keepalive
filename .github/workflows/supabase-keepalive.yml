@@ -1,33 +1,32 @@
 # 定时任务名称，可自定义
-name: Supabase Keepalive
-
+name: Keep Supabase Projects Alive
 # 触发规则：每周一 00:00 UTC 执行（对应北京时间 8:00），同时支持手动触发
 on:
   schedule:
-    - cron: '0 0 * * *'  # 每周执行一次，足够防止休眠；如需更频繁，可改为 '0 0 * * *'（每天）
-  workflow_dispatch:     # 手动触发开关
-
+    - cron: '0 0 * * *'  # 每天执行一次，足够防止休眠；每周一可改为 '0 0 * * 1'（每天）
+  workflow_dispatch:     # 允许手动触发
 # 任务执行逻辑
 jobs:
-  ping-supabase:
-    runs-on: ubuntu-latest  # 使用 GitHub 提供的 Ubuntu 服务器
+  keep-alive:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: ["pwsaexmpdnyxwbvjecvr", "yptwhpcduynweqdsofmx"]
     steps:
-      - name: Send keep-alive request to Supabase
+      - name: Ping Supabase Project
         run: |
-          # 替换为你的 Supabase 项目 URL 和 anon key（必须改！）
-          SUPABASE_URL="https://yptwhpcduynweqdsofmx.supabase.co"
-          SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlwdHdocGNkdXlud2VxZHNvZm14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyMTQ1OTgsImV4cCI6MjA3OTc5MDU5OH0.IKcpjcrIYL4ENB7RwtrbJJN8M-ioH9Ajhp4GOX5j6sg"
+          url="https://${{ matrix.project }}.supabase.co/functions/v1/ping"
+          echo "📡 Pinging $url..."
           
-          # 发送 GET 请求到 Supabase REST API，触发活跃状态
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X GET "$SUPABASE_URL/rest/v1/" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          for attempt in {1..3}; do
+            response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url")
+            if [ "$response" -eq 200 ]; then
+              echo "✅ Success for ${{ matrix.project }} (HTTP 200)"
+              exit 0
+            fi
+            echo "⚠️ Attempt $attempt failed (HTTP $response), retrying in 2s..."
+            sleep 2
+          done
           
-          # 输出请求结果，方便排查问题
-          if [ "$RESPONSE" -eq 200 ] || [ "$RESPONSE" -eq 401 ]; then
-            echo "✅ Supabase ping 成功，状态码: $RESPONSE"
-          else
-            echo "❌ Supabase ping 失败，状态码: $RESPONSE"
-            exit 1
-          fi
+          echo "❌ All attempts failed for ${{ matrix.project }} (last status: $response)"
+          exit 1
