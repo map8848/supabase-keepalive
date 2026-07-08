@@ -1,8 +1,8 @@
 name: Supabase保活
-# 每6天执行一次，避开7天休眠阈值
 on:
   schedule:
     - cron: '0 0 */3 * *'
+  workflow_dispatch: # 手动运行开关，加上后页面会出现Run按钮
 jobs:
   ping:
     runs-on: ubuntu-latest
