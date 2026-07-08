@@ -1,0 +1,15 @@
+name: Supabase保活
+# 每6天执行一次，避开7天休眠阈值
+on:
+  schedule:
+    - cron: '0 0 */3 * *'
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 访问数据库保活
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          curl "$URL/rest/v1/?apikey=$KEY"
