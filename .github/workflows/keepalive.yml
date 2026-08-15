@@ -2,8 +2,11 @@ name: Supabase Keep-Alive
 
 on:
   schedule:
-    # 每3天 UTC 时间 00:00 执行一次（北京时间 08:00）
-    - cron: '0 0 */3 * *'
+    # 每天不定时触发，4个不同时间段（UTC 时间，对应北京时间不同时段）
+    - cron: '17 1 * * *'    # UTC 01:17 = 北京时间 09:17
+    - cron: '43 6 * * *'    # UTC 06:43 = 北京时间 14:43
+    - cron: '29 12 * * *'   # UTC 12:29 = 北京时间 20:29
+    - cron: '53 18 * * *'   # UTC 18:53 = 北京时间 02:53
   # 支持手动触发
   workflow_dispatch:
 
@@ -17,15 +20,56 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           echo "正在 ping Supabase 项目..."
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+
+          # 方法1: 调用 RPC ping 函数
+          echo "--- 尝试 RPC ping ---"
+          HTTP_CODE=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
             -X POST "${SUPABASE_URL}/rest/v1/rpc/ping" \
             -H "apikey: ${SUPABASE_ANON_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
-            -H "Content-Type: application/json")
-          echo "HTTP 状态码: ${RESPONSE}"
-          if [ "$RESPONSE" = "200" ]; then
-            echo "Supabase ping 成功！项目已保持活跃。"
-          else
-            echo "Supabase ping 失败，请检查 URL 和 Key 配置。"
-            exit 1
+            -H "Content-Type: application/json" \
+            -d '{}')
+          BODY=$(cat /tmp/response.txt)
+          echo "HTTP 状态码: ${HTTP_CODE}"
+          echo "响应内容: ${BODY}"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "RPC ping 成功！项目已保持活跃。"
+            exit 0
           fi
+
+          # 方法2: RPC 失败则尝试查询 auth.users 表
+          echo "--- RPC 失败，尝试查询 auth.users ---"
+          HTTP_CODE2=$(curl -s -o /tmp/response2.txt -w "%{http_code}" \
+            -X GET "${SUPABASE_URL}/rest/v1/auth/users?select=count&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: count=exact")
+          BODY2=$(cat /tmp/response2.txt)
+          echo "HTTP 状态码: ${HTTP_CODE2}"
+          echo "响应内容: ${BODY2}"
+
+          if [ "$HTTP_CODE2" = "200" ] || [ "$HTTP_CODE2" = "206" ]; then
+            echo "查询 auth.users 成功！项目已保持活跃。"
+            exit 0
+          fi
+
+          # 方法3: 都失败则尝试任意 GET 请求（仅生成网络活动）
+          echo "--- 查询失败，尝试基础 GET 请求 ---"
+          HTTP_CODE3=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${SUPABASE_URL}/rest/v1/" \
+            -H "apikey: ${SUPABASE_ANON_KEY}")
+          echo "HTTP 状态码: ${HTTP_CODE3}"
+
+          if [ "$HTTP_CODE3" = "200" ]; then
+            echo "基础请求成功！项目已保持活跃。"
+            exit 0
+          fi
+
+          echo "所有方法均失败，请检查："
+          echo "1. SUPABASE_URL 格式是否正确（如 https://xxxxx.supabase.co）"
+          echo "2. SUPABASE_ANON_KEY 是否正确"
+          echo "3. ping() 函数是否已在 SQL Editor 中创建"
+          echo "4. URL 末尾不要带斜杠 /"
+          exit 1
